@@ -1,0 +1,48 @@
+name: putMQ
+
+x-daq-config: &daq-env
+    SENSOR_IP: "192.168.9.40"
+    SENSOR_CHANNEL: 2
+    SENSOR_SAMPLERATE: 1000
+    SENSOR_TARGETCNT: 0
+    SENSOR_GAIN: 0
+    SENSOR_TRIGGERMODE: 0
+    SENSOR_DATATRANSMETHOD: 0
+    SENSOR_AUTORUN: 0
+
+x-mq: &mq-env
+    MQ_HOST: "mq"
+    RABBITMQ_DEFAULT_USER: ${MQ_USER:-user}
+    RABBITMQ_DEFAULT_PASS: ${MQ_PASS:-password}
+
+x-timezone: &tz-env
+    TZ: Asia/Taipei
+
+services:
+    mq:
+        image: rabbitmq:3-management-alpine 
+        environment:
+            <<: [*mq-env, *tz-env]
+        hostname: mq
+        restart: on-failure
+        networks:
+            - backend
+        ports:
+            - "15672:15672"
+            - "5672:5672"
+
+    daq:
+        build:
+            context: ./app
+            dockerfile: Dockerfile
+        depends_on:
+            - mq
+        environment:
+            <<: [*mq-env, *tz-env, *daq-env]
+        restart: on-failure
+        networks:
+            - backend
+
+networks:
+    frontend:
+    backend:
