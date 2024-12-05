@@ -1,4 +1,4 @@
-# 使用 Debian Slim 作為基礎映像
+# 使用 Debian 11 作為基礎映像
 FROM debian:bullseye-slim
 
 # 安裝必要的套件與 RabbitMQ-C 庫
@@ -30,8 +30,7 @@ COPY libhsdaq.so .
 COPY windows2linux.h .
 
 # 編譯程式，鏈接 RabbitMQ-C 和 Hsdaq 庫
-#RUN g++ -std=c++14 -o main main.cpp -I/usr/include/rabbitmq-c -L/usr/local/lib -L/daq/ -lrabbitmq -lhsdaq -lpthread
-RUN g++ -o main main.cpp -I. -L. -lhsdaq -lrabbitmq -lpthread
+RUN g++ -std=c++14 -o main main.cpp -I/usr/include/rabbitmq-c -L/usr/local/lib -L/daq/ -lrabbitmq -lhsdaq -lpthread
 
 # 設定執行時動態庫路徑
 ENV LD_LIBRARY_PATH=/usr/local/lib:/daq/:$LD_LIBRARY_PATH

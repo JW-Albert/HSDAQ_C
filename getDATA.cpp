@@ -45,7 +45,7 @@ I32 msleep(L32 msec);
 
 I32 main( void ) {
     HANDLE hHS;
-    char *IPadd = "192.168.9.40";
+    const char *IPadd = "192.168.9.40";
 
     bool ret = false;
     I16 chCnt = 2;
@@ -56,7 +56,7 @@ I32 main( void ) {
     //Step 1: Create a TCP connection with ET-AR400
 	printf("Connecting to device...\n");
     hHS = HS_Device_Create(tmp);
-	if( hHs == NULL ) {
+	if( hHS == NULL ) {
 		printf("Failed to connect to device.\n");
 		return 0;
 	}
