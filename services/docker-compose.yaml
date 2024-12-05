@@ -33,7 +33,7 @@ services:
 
     daq:
         build:
-            context: ./app
+            context: ./daq
             dockerfile: Dockerfile
         depends_on:
             - mq
