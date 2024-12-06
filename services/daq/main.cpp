@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <time.h>
 #include "windows2linux.h"
 #include <termios.h> //#include <conio.h>
 #include <unistd.h>
@@ -12,12 +13,20 @@
 #include <amqp_tcp_socket.h>
 #include "./hsdaql.h"
 
-#define MQ_HOST "localhost"
+#define MQ_HOST "172.18.0.2"
 #define MQ_USER "user"
 #define MQ_PASS "password"
 #define MQ_QUEUE "data_queue"
 #define SAMPLE_RATE 12800
 #define BUFFERSIZE 1000
+
+void get_formatted_time(char *buffer, size_t buffer_size) {
+    time_t now = time(NULL);             // 獲取當前時間
+    struct tm *tm_info = localtime(&now); // 將時間轉換為本地時間
+
+    // 格式化時間為 YY_MM_DD_HH_mm
+    strftime(buffer, buffer_size, "%y_%m_%d_%H_%M_%S", tm_info);
+}
 
 // RabbitMQ 連線函數
 amqp_connection_state_t establish_rabbitmq_connection(int retries) {
@@ -33,9 +42,9 @@ amqp_connection_state_t establish_rabbitmq_connection(int retries) {
         }
 
         int status = amqp_socket_open(socket, MQ_HOST, 5672);
-        if (status != true) {
-            fprintf(stderr, "Failed to open RabbitMQ connection to %s:%d. Error: %s\n",
-                    MQ_HOST, 5672, amqp_error_string2(status));
+        if (status != AMQP_STATUS_OK) {
+            fprintf(stderr, "Failed to open RabbitMQ connection to %s:%d. Error: %s status: %d\n",
+                    MQ_HOST, 5672, amqp_error_string2(status) ,status);
             amqp_destroy_connection(conn);
             usleep(retry_interval * 1000);
             retry_interval = (retry_interval * 2 > 60000) ? 60000 : retry_interval * 2;
@@ -95,7 +104,9 @@ void send_to_rabbitmq(amqp_connection_state_t conn, const float *data, size_t co
     // 上傳數據
     amqp_bytes_t body = {.len = strlen(json_data), .bytes = (void *)json_data};
     amqp_basic_publish(conn, 1, amqp_cstring_bytes(""), amqp_cstring_bytes(MQ_QUEUE), 0, 0, NULL, body);
-    printf("Data sent to RabbitMQ: %s\n", json_data);
+    char time_str[20]; // 儲存時間字串的緩衝區
+    get_formatted_time(time_str, sizeof(time_str));
+    printf("%d's of data sent to RabbitMQ at %s\n", SAMPLE_RATE ,time_str);
 }
 
 I32 main(void) {
@@ -131,10 +142,20 @@ I32 main(void) {
         return -1;
     }
 
+    if(!HS_ClearAIBuffer(hHS)) {
+        fprintf(stderr, "Failed to clear AI buffer.\n");
+        HS_Device_Release(hHS);
+        return -1;
+    }
+
     printf("Start Scan\n");
 
+    char time_str[20]; // 儲存時間字串的緩衝區
+
     // 主循環
+    int count = 0;
     while (1) {
+        
         WORD BufferStatus = 0;
         UL32 ulleng = 0;
 
@@ -152,6 +173,9 @@ I32 main(void) {
                     accumulatedData[accumulatedCount++] = fdataBuffer[i];
 
                     if (accumulatedCount >= SAMPLE_RATE) {
+                        count ++;
+                        get_formatted_time(time_str, sizeof(time_str)); // 呼叫函數取得時間字串
+                        printf("The %d is Sending data to RabbitMQ at %s\n", count, time_str);
                         send_to_rabbitmq(conn, accumulatedData, accumulatedCount, 2);
                         accumulatedCount = 0; // 清空累積數據
                     }

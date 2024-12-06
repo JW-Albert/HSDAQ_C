@@ -2,7 +2,7 @@
 FROM debian:bullseye-slim
 
 # 安裝必要的套件與 RabbitMQ-C 庫
-RUN apt-get update && apt-get install -y \
+RUN apt update && apt install -y \
     wget \
     g++ \
     build-essential \
@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
     librabbitmq-dev \
     pkg-config \
     ca-certificates && \
-    apt-get clean && \
+    apt clean && \
     rm -rf /var/lib/apt/lists/*
 
 # 安裝最新版本的 CMake
