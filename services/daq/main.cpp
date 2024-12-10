@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <time.h>
 #include "windows2linux.h"
-#include <termios.h> //#include <conio.h>
+#include <termios.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/time.h>
@@ -47,7 +47,6 @@ amqp_connection_state_t establish_rabbitmq_connection(int retries) {
                     MQ_HOST, 5672, amqp_error_string2(status) ,status);
             amqp_destroy_connection(conn);
             usleep(retry_interval * 1000);
-            retry_interval = (retry_interval * 2 > 60000) ? 60000 : retry_interval * 2;
             continue; // 跳過本次迴圈嘗試下一次連線
         }
 
@@ -58,7 +57,6 @@ amqp_connection_state_t establish_rabbitmq_connection(int retries) {
             fprintf(stderr, "Failed to login to RabbitMQ. Error: %d\n", login_reply.reply_type);
             amqp_destroy_connection(conn);
             usleep(retry_interval * 1000);
-            retry_interval = (retry_interval * 2 > 60000) ? 60000 : retry_interval * 2;
             continue; // 跳過本次迴圈嘗試下一次連線
         }
 
@@ -70,7 +68,6 @@ amqp_connection_state_t establish_rabbitmq_connection(int retries) {
             amqp_connection_close(conn, AMQP_REPLY_SUCCESS);
             amqp_destroy_connection(conn);
             usleep(retry_interval * 1000);
-            retry_interval = (retry_interval * 2 > 60000) ? 60000 : retry_interval * 2;
             continue; // 跳過本次迴圈嘗試下一次連線
         }
 
@@ -82,6 +79,16 @@ amqp_connection_state_t establish_rabbitmq_connection(int retries) {
     exit(EXIT_FAILURE); // 超出重試次數後退出
 }
 
+// 檢查 RabbitMQ 連線是否正常
+int is_rabbitmq_connected(amqp_connection_state_t conn) {
+    amqp_channel_open(conn, 1);
+    amqp_rpc_reply_t channel_reply = amqp_get_rpc_reply(conn);
+    if (channel_reply.reply_type != AMQP_RESPONSE_NORMAL) {
+        fprintf(stderr, "RabbitMQ connection lost.\n");
+        return 0; // 連線中斷
+    }
+    return 1; // 連線正常
+}
 
 // 封裝數據並上傳至 RabbitMQ
 void send_to_rabbitmq(amqp_connection_state_t conn, const float *data, size_t count, int chCnt) {
@@ -172,7 +179,12 @@ I32 main(void) {
                 for (I32 i = 0; i < readsize; i++) {
                     accumulatedData[accumulatedCount++] = fdataBuffer[i];
 
-                    if (accumulatedCount >= SAMPLE_RATE) {
+                    if (accumulatedCount >= SAMPLE_RATE * 60) {
+                        if (!is_rabbitmq_connected(conn)) {
+                            amqp_connection_close(conn, AMQP_REPLY_SUCCESS);
+                            amqp_destroy_connection(conn);
+                            conn = establish_rabbitmq_connection(10); // 重新連線
+                        }
                         count ++;
                         get_formatted_time(time_str, sizeof(time_str)); // 呼叫函數取得時間字串
                         printf("The %d is Sending data to RabbitMQ at %s\n", count, time_str);
