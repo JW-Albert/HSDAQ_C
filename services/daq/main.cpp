@@ -13,11 +13,19 @@
 #include <amqp_tcp_socket.h>
 #include "./hsdaql.h"
 
-#define MQ_HOST "172.18.0.2"
-#define MQ_USER "user"
-#define MQ_PASS "password"
-#define MQ_QUEUE "data_queue"
-#define SAMPLE_RATE 12800
+char *MQ_HOST = getenv("MQ_HOST");
+char *MQ_USER = getenv("RABBITMQ_DEFAULT_USER");
+char *MQ_PASS = getenv("RABBITMQ_DEFAULT_PASS");
+char *MQ_QUEUE  = getenv("MQ_QUEUE");
+const char *SENSOR_IP = getenv("SENSOR_IP");
+int SENSOR_CHANNEL = atoi(getenv("SENSOR_CHANNEL"));
+int SENSOR_SAMPLERATE = atoi(getenv("SENSOR_SAMPLERATE"));
+int SENSOR_TARGETCNT = atoi(getenv("SENSOR_TARGETCNT"));
+int SENSOR_GAIN = atoi(getenv("SENSOR_GAIN"));
+int SENSOR_TRIGGERMODE = atoi(getenv("SENSOR_TRIGGERMODE"));
+int SENSOR_DATATRANSMETHOD = atoi(getenv("SENSOR_DATATRANSMETHOD"));
+int SENSOR_AUTORUN = atoi(getenv("SENSOR_AUTORUN"));
+
 #define BUFFERSIZE 1000
 
 void get_formatted_time(char *buffer, size_t buffer_size) {
@@ -117,20 +125,31 @@ void send_to_rabbitmq(amqp_connection_state_t conn, const float *data ,int size_
     fprintf(stderr, "%d's of data sent to RabbitMQ at %s\n", size_of_data/4 ,time_str);
 }
 
-I32 main(void) {
+I32 main( void ) {
+    fprintf(stderr,"MQ_HOST: %s\n", MQ_HOST);
+    fprintf(stderr,"MQ_USER: %s\n", MQ_USER);
+    fprintf(stderr,"MQ_PASS: %s\n", MQ_PASS);
+    fprintf(stderr,"MQ_QUEUE: %s\n", MQ_QUEUE);
+    fprintf(stderr,"SENSOR_IP: %s\n", SENSOR_IP);
+    fprintf(stderr,"SENSOR_CHANNEL: %d\n", SENSOR_CHANNEL);
+    fprintf(stderr,"SENSOR_SAMPLERATE: %d\n", SENSOR_SAMPLERATE);
+    fprintf(stderr,"SENSOR_TARGETCNT: %d\n", SENSOR_TARGETCNT);
+    fprintf(stderr,"SENSOR_GAIN: %d\n", SENSOR_GAIN);
+    fprintf(stderr,"SENSOR_TRIGGERMODE: %d\n", SENSOR_TRIGGERMODE);
+    fprintf(stderr,"SENSOR_DATATRANSMETHOD: %d\n", SENSOR_DATATRANSMETHOD);
+    fprintf(stderr,"SENSOR_AUTORUN: %d\n", SENSOR_AUTORUN);
+
     HANDLE hHS;
-    const char *IPadd = "192.168.9.40";
     float fdataBuffer[BUFFERSIZE];
-    UL32 remChannel = 0;
     size_t accumulatedCount = 0;
-    float accumulatedData[SAMPLE_RATE * 60];
+    float accumulatedData[SENSOR_SAMPLERATE * 60];
 
     // RabbitMQ 初始化
     amqp_connection_state_t conn = establish_rabbitmq_connection();
 
     // PET-AR400 初始化
     char tmp[128] = {0};
-    sprintf(tmp, "%s,9999,10010", IPadd);
+    sprintf(tmp, "%s,9999,10010", SENSOR_IP);
     fprintf(stderr, "Connecting to device...\n");
     hHS = HS_Device_Create(tmp);
     if (hHS == false) {
@@ -138,7 +157,7 @@ I32 main(void) {
         return -1;
     }
 
-    if (!HS_SetAIScanParam(hHS, 2, 0, 0, SAMPLE_RATE, 0, 0, 0)) {
+    if (!HS_SetAIScanParam(hHS, SENSOR_CHANNEL, SENSOR_GAIN, SENSOR_TRIGGERMODE, SENSOR_SAMPLERATE, SENSOR_TARGETCNT, SENSOR_DATATRANSMETHOD, SENSOR_AUTORUN)) {
         fprintf(stderr, "Failed to set scan parameters.\n");
         HS_Device_Release(hHS);
         return -1;
@@ -179,7 +198,7 @@ I32 main(void) {
                 for (I32 i = 0; i < readsize; i++) {
                     accumulatedData[accumulatedCount++] = fdataBuffer[i];
 
-                    if (accumulatedCount >= SAMPLE_RATE * 60) {
+                    if (accumulatedCount >= SENSOR_SAMPLERATE * 60) {
                         /*if (!is_rabbitmq_connected(conn)) {
                             fprintf(stderr, "RabbitMQ connection lost. Attempting to reconnect...\n");
                             amqp_connection_close(conn, AMQP_REPLY_SUCCESS);
@@ -193,7 +212,7 @@ I32 main(void) {
                         count ++;
                         get_formatted_time(time_str, sizeof(time_str)); // 呼叫函數取得時間字串
                         fprintf(stderr, "The %d is Sending data to RabbitMQ at %s\n", count, time_str);
-                        send_to_rabbitmq(conn, accumulatedData ,sizeof(accumulatedData), accumulatedCount, 2);
+                        send_to_rabbitmq(conn, accumulatedData ,sizeof(accumulatedData), accumulatedCount, SENSOR_CHANNEL);
                         accumulatedCount = 0; // 清空累積數據
                     }
                 }
@@ -204,8 +223,10 @@ I32 main(void) {
     // 停止掃描並釋放資源
     HS_StopAIScan(hHS);
     fprintf(stderr, "Scan stopped\n");
+
     HS_Device_Release(hHS);
     fprintf(stderr, "Device released\n");
+
     amqp_connection_close(conn, AMQP_REPLY_SUCCESS);
     amqp_destroy_connection(conn);
 
