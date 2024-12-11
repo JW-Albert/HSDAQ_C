@@ -28,17 +28,17 @@ int SENSOR_AUTORUN = atoi(getenv("SENSOR_AUTORUN"));
 
 #define BUFFERSIZE 1000
 
+// Get the current time and format it as a string
 void get_formatted_time(char *buffer, size_t buffer_size) {
-    time_t now = time(NULL);             // 獲取當前時間
-    struct tm *tm_info = localtime(&now); // 將時間轉換為本地時間
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
 
-    // 格式化時間為 YY_MM_DD_HH_mm
     strftime(buffer, buffer_size, "%y_%m_%d_%H_%M_%S", tm_info);
 }
 
-// RabbitMQ 連線函數
+// RabbitMQ Connection
 amqp_connection_state_t establish_rabbitmq_connection() {
-    const int retry_interval = 1000; // 重試間隔（毫秒）
+    const int retry_interval = 1000;
     amqp_connection_state_t conn;
 
     while (1) {
@@ -86,6 +86,7 @@ amqp_connection_state_t establish_rabbitmq_connection() {
     exit(EXIT_FAILURE);
 }
 
+// Check if the RabbitMQ connection is still alive
 int is_rabbitmq_connected(amqp_connection_state_t conn) {
     int status = amqp_basic_publish(
         conn, 1, amqp_cstring_bytes(""), amqp_empty_bytes, 0, 0, NULL, amqp_empty_bytes
@@ -93,13 +94,13 @@ int is_rabbitmq_connected(amqp_connection_state_t conn) {
 
     if (status != AMQP_STATUS_OK) {
         fprintf(stderr, "RabbitMQ connection lost. Status: %d\n", status);
-        return 0; // 連線中斷
+        return 0; // Connection lost
     }
 
-    return 1; // 連線正常
+    return 1; // Connection is still alive
 }
 
-// 封裝數據並上傳至 RabbitMQ
+// Send data to RabbitMQ
 void send_to_rabbitmq(amqp_connection_state_t conn, const float *data ,int size_of_data, size_t count, int chCnt) {
     char json_data[1024] = "{ \"data\": [";
     size_t json_len = strlen(json_data);
@@ -117,10 +118,11 @@ void send_to_rabbitmq(amqp_connection_state_t conn, const float *data ,int size_
     }
     strncat(json_data, "] }", sizeof(json_data) - json_len - 1);
 
-    // 上傳數據
+    // update json_data
     amqp_bytes_t body = {.len = strlen(json_data), .bytes = (void *)json_data};
     amqp_basic_publish(conn, 1, amqp_cstring_bytes(""), amqp_cstring_bytes(MQ_QUEUE), 0, 0, NULL, body);
-    char time_str[20]; // 儲存時間字串的緩衝區
+
+    char time_str[20];
     get_formatted_time(time_str, sizeof(time_str));
     fprintf(stderr, "%d's of data sent to RabbitMQ at %s\n", size_of_data/4 ,time_str);
 }
@@ -144,10 +146,10 @@ I32 main( void ) {
     size_t accumulatedCount = 0;
     float accumulatedData[SENSOR_SAMPLERATE * 60];
 
-    // RabbitMQ 初始化
+    // RabbitMQ initialization
     amqp_connection_state_t conn = establish_rabbitmq_connection();
 
-    // PET-AR400 初始化
+    // PET-AR400 initialization
     char tmp[128] = {0};
     sprintf(tmp, "%s,9999,10010", SENSOR_IP);
     fprintf(stderr, "Connecting to device...\n");
@@ -177,9 +179,9 @@ I32 main( void ) {
 
     fprintf(stderr, "Start Scan\n");
 
-    char time_str[20]; // 儲存時間字串的緩衝區
+    char time_str[20]; // time string buffer
 
-    // 主循環
+    // main loop
     int count = 0;
     while (1) {
         WORD BufferStatus = 0;
@@ -210,17 +212,17 @@ I32 main( void ) {
                             }
                         }*/
                         count ++;
-                        get_formatted_time(time_str, sizeof(time_str)); // 呼叫函數取得時間字串
+                        get_formatted_time(time_str, sizeof(time_str));
                         fprintf(stderr, "The %d is Sending data to RabbitMQ at %s\n", count, time_str);
                         send_to_rabbitmq(conn, accumulatedData ,sizeof(accumulatedData), accumulatedCount, SENSOR_CHANNEL);
-                        accumulatedCount = 0; // 清空累積數據
+                        accumulatedCount = 0; // clear accumulated data
                     }
                 }
             }
         }
     }
 
-    // 停止掃描並釋放資源
+    // Stop scan and release device
     HS_StopAIScan(hHS);
     fprintf(stderr, "Scan stopped\n");
 
