@@ -13,11 +13,11 @@
 #include <amqp_tcp_socket.h>
 #include "./hsdaql.h"
 
-char *MQ_HOST = getenv("MQ_HOST");
-char *MQ_USER = getenv("RABBITMQ_DEFAULT_USER");
-char *MQ_PASS = getenv("RABBITMQ_DEFAULT_PASS");
-char *MQ_QUEUE  = getenv("MQ_QUEUE");
-const char *SENSOR_IP = getenv("SENSOR_IP");
+char const *MQ_HOST = getenv("MQ_HOST");
+char const *MQ_USER = getenv("RABBITMQ_DEFAULT_USER");
+char const *MQ_PASS = getenv("RABBITMQ_DEFAULT_PASS");
+char const *MQ_QUEUE  = getenv("MQ_QUEUE");
+char const *SENSOR_IP = getenv("SENSOR_IP");
 int SENSOR_CHANNEL = atoi(getenv("SENSOR_CHANNEL"));
 int SENSOR_SAMPLERATE = atoi(getenv("SENSOR_SAMPLERATE"));
 int SENSOR_TARGETCNT = atoi(getenv("SENSOR_TARGETCNT"));
@@ -101,27 +101,52 @@ int is_rabbitmq_connected(amqp_connection_state_t conn) {
 }
 
 // Send data to RabbitMQ
-void send_to_rabbitmq(amqp_connection_state_t conn, const float *data ,int size_of_data, size_t count, int chCnt) {
-    char json_data[1024] = "{ \"data\": [";
+void send_to_rabbitmq(amqp_connection_state_t conn, const float *data ,int size_of_data, size_t count) {
+    // 計算所需緩衝區大小
+    size_t estimated_size = count * 64 + 20; // 每個 JSON 對象約 64 字節，加上固定部分
+    char *json_data = (char *)malloc(estimated_size); // 動態分配內存
+    if (!json_data) {
+        fprintf(stderr, "Failed to allocate memory for JSON data.\n");
+        return;
+    }
+
+    // 構建 JSON 開始部分
+    strcpy(json_data, "{ \"data\": [");
     size_t json_len = strlen(json_data);
 
+    // 構建 JSON 對象
     for (size_t i = 0; i < count; i++) {
-        char buffer[32];
-        snprintf(buffer, sizeof(buffer), "{\"Channel\": %d, \"Value\": %f}", (int)(i % chCnt) + 1, data[i]);
-        strncat(json_data, buffer, sizeof(json_data) - json_len - 1);
-        json_len = strlen(json_data);
+        char buffer[64];
+        int written = snprintf(buffer, sizeof(buffer), "{\"Channel\": %d, \"Value\": %.5f}", (int)(i % chCnt) + 1, data[i]);
 
+        if (written < 0 || json_len + written >= estimated_size - 3) {
+            fprintf(stderr, "Buffer overflow detected while building JSON data.\n");
+            free(json_data); // 釋放內存
+            return;
+        }
+
+        strcat(json_data, buffer);
+        json_len += written;
+
+        // 只有在不是最後一個項目時才添加逗號
         if (i < count - 1) {
-            strncat(json_data, ", ", sizeof(json_data) - json_len - 1);
-            json_len = strlen(json_data);
+            strcat(json_data, ", ");
+            json_len += 2;
         }
     }
-    strncat(json_data, "] }", sizeof(json_data) - json_len - 1);
 
-    // update json_data
-    amqp_bytes_t body = {.len = strlen(json_data), .bytes = (void *)json_data};
-    amqp_basic_publish(conn, 1, amqp_cstring_bytes(""), amqp_cstring_bytes(MQ_QUEUE), 0, 0, NULL, body);
+    // 添加結尾部分
+    strcat(json_data, "] }");
 
+    // 發佈資料到 RabbitMQ
+    amqp_bytes_t body = {.len = strlen(json_data), .bytes = json_data};
+    if (amqp_basic_publish(conn, 1, amqp_cstring_bytes(""), amqp_cstring_bytes(MQ_QUEUE), 0, 0, NULL, body) != AMQP_STATUS_OK) {
+        fprintf(stderr, "Failed to publish data to RabbitMQ.\n");
+    }
+
+    // 釋放內存
+    free(json_data);
+    
     char time_str[20];
     get_formatted_time(time_str, sizeof(time_str));
     fprintf(stderr, "%d's of data sent to RabbitMQ at %s\n", size_of_data/4 ,time_str);
@@ -144,7 +169,7 @@ I32 main( void ) {
     HANDLE hHS;
     float fdataBuffer[BUFFERSIZE];
     size_t accumulatedCount = 0;
-    float accumulatedData[SENSOR_SAMPLERATE * 60];
+    float accumulatedData[SENSOR_SAMPLERATE];
 
     // RabbitMQ initialization
     amqp_connection_state_t conn = establish_rabbitmq_connection();
@@ -200,12 +225,12 @@ I32 main( void ) {
                 for (I32 i = 0; i < readsize; i++) {
                     accumulatedData[accumulatedCount++] = fdataBuffer[i];
 
-                    if (accumulatedCount >= SENSOR_SAMPLERATE * 60) {
+                    if (accumulatedCount >= SENSOR_SAMPLERATE) {
                         /*if (!is_rabbitmq_connected(conn)) {
                             fprintf(stderr, "RabbitMQ connection lost. Attempting to reconnect...\n");
                             amqp_connection_close(conn, AMQP_REPLY_SUCCESS);
                             amqp_destroy_connection(conn);
-                            conn = establish_rabbitmq_connection(); // ���s�إ߳s�u
+                            conn = establish_rabbitmq_connection(); // ���s�إ߳s�u
                             if (conn == NULL) {
                                 fprintf(stderr, "Failed to reconnect to RabbitMQ. Exiting...\n");
                                 break;
@@ -214,7 +239,7 @@ I32 main( void ) {
                         count ++;
                         get_formatted_time(time_str, sizeof(time_str));
                         fprintf(stderr, "The %d is Sending data to RabbitMQ at %s\n", count, time_str);
-                        send_to_rabbitmq(conn, accumulatedData ,sizeof(accumulatedData), accumulatedCount, SENSOR_CHANNEL);
+                        send_to_rabbitmq(conn, accumulatedData ,sizeof(accumulatedData), accumulatedCount);
                         accumulatedCount = 0; // clear accumulated data
                     }
                 }
