@@ -13,11 +13,11 @@
 #include <amqp_tcp_socket.h>
 #include "./hsdaql.h"
 
-char const *MQ_HOST = getenv("MQ_HOST");
-char const *MQ_USER = getenv("RABBITMQ_DEFAULT_USER");
-char const *MQ_PASS = getenv("RABBITMQ_DEFAULT_PASS");
-char const *MQ_QUEUE  = getenv("MQ_QUEUE");
-char const *SENSOR_IP = getenv("SENSOR_IP");
+char *MQ_HOST = getenv("MQ_HOST");
+char *MQ_USER = getenv("RABBITMQ_DEFAULT_USER");
+char *MQ_PASS = getenv("RABBITMQ_DEFAULT_PASS");
+char *MQ_QUEUE  = getenv("MQ_QUEUE");
+const char *SENSOR_IP = getenv("SENSOR_IP");
 int SENSOR_CHANNEL = atoi(getenv("SENSOR_CHANNEL"));
 int SENSOR_SAMPLERATE = atoi(getenv("SENSOR_SAMPLERATE"));
 int SENSOR_TARGETCNT = atoi(getenv("SENSOR_TARGETCNT"));
@@ -59,7 +59,7 @@ amqp_connection_state_t establish_rabbitmq_connection() {
         }
 
         amqp_rpc_reply_t login_reply = amqp_login(
-            conn, "/", 0, 131072, 70, AMQP_SASL_METHOD_PLAIN, MQ_USER, MQ_PASS
+            conn, "/", 0, 131072, 0, AMQP_SASL_METHOD_PLAIN, MQ_USER, MQ_PASS
         );
         if (login_reply.reply_type != AMQP_RESPONSE_NORMAL) {
             fprintf(stderr, "Failed to login to RabbitMQ. Retrying...\n");
@@ -117,7 +117,7 @@ void send_to_rabbitmq(amqp_connection_state_t conn, const float *data ,int size_
     // 構建 JSON 對象
     for (size_t i = 0; i < count; i++) {
         char buffer[64];
-        int written = snprintf(buffer, sizeof(buffer), "{\"Channel\": %d, \"Value\": %.5f}", (int)(i % chCnt) + 1, data[i]);
+        int written = snprintf(buffer, sizeof(buffer), "{\"Channel\": %d, \"Value\": %.5f}", (int)(i % SENSOR_CHANNEL) + 1, data[i]);
 
         if (written < 0 || json_len + written >= estimated_size - 3) {
             fprintf(stderr, "Buffer overflow detected while building JSON data.\n");
@@ -146,7 +146,7 @@ void send_to_rabbitmq(amqp_connection_state_t conn, const float *data ,int size_
 
     // 釋放內存
     free(json_data);
-    
+
     char time_str[20];
     get_formatted_time(time_str, sizeof(time_str));
     fprintf(stderr, "%d's of data sent to RabbitMQ at %s\n", size_of_data/4 ,time_str);
@@ -169,7 +169,7 @@ I32 main( void ) {
     HANDLE hHS;
     float fdataBuffer[BUFFERSIZE];
     size_t accumulatedCount = 0;
-    float accumulatedData[SENSOR_SAMPLERATE];
+    float accumulatedData[SENSOR_SAMPLERATE * SENSOR_CHANNEL];
 
     // RabbitMQ initialization
     amqp_connection_state_t conn = establish_rabbitmq_connection();
