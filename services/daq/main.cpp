@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <time.h>
-#include "windows2linux.h"
 #include <termios.h> //#include <conio.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -11,7 +10,8 @@
 #include <sys/select.h>
 #include <amqp.h>
 #include <amqp_tcp_socket.h>
-#include "./hsdaql.h"
+#include "./include/hsdaql/hsdaql.h"
+#include "./include/w2l/windows2linux.h"
 
 char *MQ_HOST = getenv("MQ_HOST");
 char *MQ_USER = getenv("RABBITMQ_DEFAULT_USER");

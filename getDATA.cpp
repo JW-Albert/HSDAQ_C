@@ -2,14 +2,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
-#include "windows2linux.h"
 #include <termios.h> //#include <conio.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/select.h>
 
-#include "./hsdaql.h"
+#include "./include/w2l/windows2linux.h"
+#include "./include/hsdaq/hsdaql.h"
 
 void changemode( int dir ) {
     static struct termios oldt, newt;
